@@ -1,0 +1,102 @@
+---
+title: "Assignment 3, Task 1"
+author: "Gabriel Ingman"
+format: 
+  html:
+    theme: cyborg
+    code-fold: true
+    toc: true
+    number-sections: false
+    embed-resources: true
+editor: visual
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+# Palmetto Binary Logistic Regression
+
+## Data Overview and Summary
+
+The data analyzed in Task 1 comes from survival, growth, and biomass estimates from two dominant palmetto species- *Serenoa repens* and *Sabal etonia*- in South Central Florida, collected over a thirty year period from 1987 to 2017. Researchers at Bucknell University collected the data. The annual data measures height (cm), canopy length (cm), width (cm), and number of new green leaves and flowering scapes.
+
+In the following data analysis, I will analyze the dataset to determine what the best predictor variable to determine whether a palmetto is a *Serenoa repens* and *Sabal etonia*: canopy height, canopy length, canopy width, or number of green leaves. In the dataset itself, the only clue given to determine the species is a 1 or a 2. So, I will analyze the dataset to see what the difference in height, length, width, and green leaf count is between species 1 and species 2.
+
+## Pseudocode for Task 1
+
+To start, I filtered the larger dataset into the five essential variables for this task: species (1 or 2), height, length, width, and green leaf count. Once I have those five variables, I mutated 'species' into a factor so that I could visually inspect the data to see how species 1 and species 2 differ. Upon visual inspection, I noticed that species 1 is bigger in every way, on average: larger height, length, width, and green leaf count.
+
+```{r setup}
+
+library(tidyverse)
+library(here)
+library(patchwork)
+
+```
+
+```{r readcsv}
+
+palmetto_raw <- read_csv(here('data', 'palmetto.csv')) %>% 
+  janitor::clean_names()
+
+palmetto_filtered <- palmetto_raw %>%
+  select(species, height, length, width, green_lvs) %>%
+    group_by(species) %>% 
+    drop_na()
+
+```
+
+## Exploring Height, Width, and Green Leaf Count with Data Visualizations
+
+```{r factoringdata}
+
+palmetto_df <- palmetto_filtered %>% 
+  mutate(species = factor(species))
+
+
+heightplot <- ggplot(palmetto_df, aes(x = height, fill = species)) +
+  geom_bar()
+
+lengthplot <- ggplot(palmetto_df, aes(x = length, fill = species)) +
+  geom_bar()
+
+widthplot <- ggplot(palmetto_df, aes(x = width, fill = species)) +
+  geom_bar()
+
+greenlvplot <- ggplot(palmetto_df, aes(x = green_lvs, fill = species)) +
+  geom_bar()
+
+(heightplot + lengthplot + widthplot + greenlvplot) + plot_annotation(
+  title = 'Visual Inspection of Palmetto Data',
+  caption = 'What variable is the best predictor of species?'
+)
+
+```
+
+The best predictor variable out of the four analyzed is green leaf count. Upon visual inspection, species 1 shows more observations with a higher green leaf count than species 2. The second best predictor variable is length. Species 2, upon visual inspection, has more observations of lengthier canopies than species 1. These two variables- green leaf count and canopy length- will serve as the best predictor variables out of the four selected for analysis.
+
+## Species Probability
+
+```{r binarylog}
+
+p1 <- species ~ height + length + width + green_lvs
+
+p2 <- species ~ height + width + green_lvs
+
+blr_palmetto_1 <- glm(formula = p1, data = palmetto_df, family =  binomial)
+blr_palmetto_2 <- glm(formula = p2, data= palmetto_df, family = binomial)
+
+summary(blr_palmetto_1)
+summary(blr_palmetto_2)
+
+
+```
+
+```{r binarylognocanopy}
+
+
+
+```
+
+**Data source:** Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative. <https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5>

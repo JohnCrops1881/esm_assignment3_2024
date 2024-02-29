@@ -1,0 +1,22 @@
+---
+title: "Assignment 3, Task 2"
+author: "Gabriel Ingman"
+format: 
+  html:
+    theme: cosmo
+    code-fold: show
+    toc: true
+    number-sections: false
+    embed-resources: true
+editor: visual
+execute:
+  echo: true
+  message: false
+  warning: false
+---
+
+## Non-Linear Least Squares
+
+```{r}
+
+```
