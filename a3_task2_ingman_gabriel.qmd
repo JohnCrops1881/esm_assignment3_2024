@@ -4,7 +4,7 @@ author: "Gabriel Ingman"
 format: 
   html:
     theme: cosmo
-    code-fold: show
+    code-fold: true
     toc: true
     number-sections: false
     embed-resources: true
@@ -15,7 +15,22 @@ execute:
   warning: false
 ---
 
-## Non-Linear Least Squares
+```{r setup}
+
+
+library(here)
+library(tidyverse)
+library(nlraa)
+
+```
+
+![Soil](soil.jpg)
+
+## Data Overview and Task Summary
+
+Soil. It's essential for agriculture. Crops grow in soil. This relationship- soil nurturing crops- is as predictable as it is simple. However,
+
+## Pseudocode for Task 2
 
 ```{r}
 
