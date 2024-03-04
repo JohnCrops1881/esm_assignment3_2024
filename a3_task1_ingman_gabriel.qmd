@@ -19,7 +19,7 @@ execute:
 
 ## Data Overview and Summary
 
-The data analyzed in Task 1 comes from survival, growth, and biomass estimates from two dominant palmetto species- *Serenoa repens* and *Sabal etonia*- in South Central Florida, collected over a thirty year period from 1987 to 2017. Researchers at Bucknell University collected the data. The annual data measures height (cm), canopy length (cm), width (cm), and number of new green leaves and flowering scapes.
+The data analyzed in Task 1 comes from survival, growth, and biomass estimates from two dominant palmetto species- *Serenoa repens* (species 1) and *Sabal etonia* (species 2)- in South Central Florida, collected over a thirty year period from 1987 to 2017. Researchers at Bucknell University collected the data. The annual data measures height (cm), canopy length (cm), width (cm), and number of new green leaves and flowering scapes.
 
 In the following data analysis, I will analyze the dataset to determine what the best predictor variable to determine whether a palmetto is a *Serenoa repens* and *Sabal etonia*: canopy height, canopy length, canopy width, or number of green leaves. In the dataset itself, the only clue given to determine the species is a 1 or a 2. So, I will analyze the dataset to see what the difference in height, length, width, and green leaf count is between species 1 and species 2.
 
@@ -27,12 +27,23 @@ In the following data analysis, I will analyze the dataset to determine what the
 
 To start, I filtered the larger dataset into the five essential variables for this task: species (1 or 2), height, length, width, and green leaf count. Once I have those five variables, I mutated 'species' into a factor so that I could visually inspect the data to see how species 1 and species 2 differ. Upon visual inspection, I noticed that species 1 is bigger in every way, on average: larger height, length, width, and green leaf count.
 
+Then, I used binary logistic regression to build two models: one that compares species (as a factor) against canopy height, length and width, and green leaf count; and the other that compares species (as a factor) against canopy height, width, and green leaf count.
+
+Following that task, I did a ten-fold cross validation using to determine what the best fit model was: model 1, that considered five variables, or model 2, that considered four. I created a Kable model that displayed the results of the cross-validation. From that, I came to the conclusion that model 1 is the better fit for the next tasks.
+
+Finally, I compared the best model, model 1, to the actual dataset using the predict command, to see how well my model predicts the palmetto species. It correctly identified *Serenoa repens* to 90.7% accuracy, and *Sabal etonia* to 92.6% accuracy. Overall, the model predicted the correct palmetto species to 91.7% accuracy.
+
+### **Data Source:**
+
+Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative. <https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5>
+
 ```{r setup}
 
 library(tidyverse)
 library(here)
 library(patchwork)
 library(tidymodels)
+library(kableExtra)
 
 ```
 
@@ -53,6 +64,8 @@ palmetto_filtered <- palmetto_raw %>%
 ```{r factoringdata}
 
 palmetto_df <- palmetto_filtered %>% 
+  mutate(species = str_replace(species, '1', 'se_repens')) %>% 
+  mutate(species = str_replace(species, '2', 'sa_etonia')) %>% 
   mutate(species = factor(species))
 
 
@@ -66,7 +79,8 @@ widthplot <- ggplot(palmetto_df, aes(x = width, fill = species)) +
   geom_bar()
 
 greenlvplot <- ggplot(palmetto_df, aes(x = green_lvs, fill = species)) +
-  geom_bar()
+  geom_boxplot() +
+  xlab('green leaf count')
 
 (heightplot + lengthplot + widthplot + greenlvplot) + plot_annotation(
   title = 'Visual Inspection of Palmetto Data',
@@ -75,11 +89,11 @@ greenlvplot <- ggplot(palmetto_df, aes(x = green_lvs, fill = species)) +
 
 ```
 
-The best predictor variable out of the four analyzed is green leaf count. Upon visual inspection, species 1 shows more observations with a higher green leaf count than species 2. The second best predictor variable is length. Species 2, upon visual inspection, has more observations of lengthier canopies than species 1. These two variables- green leaf count and canopy length- will serve as the best predictor variables out of the four selected for analysis.
+The best predictor variable out of the four analyzed appears to be green leaf count. Upon visual inspection, species 1 shows more observations with a higher green leaf count than species 2. The second best predictor variable is length. Species 2, upon visual inspection, has more observations of lengthier canopies than species 1. These two variables- green leaf count and canopy length- will serve as the best predictor variables out of the four selected for analysis. Now, I will test this hypothesis.
 
 ## Species Probability
 
-```{r binarylog}
+```{r blr}
 
 p1 <- species ~ height + length + width + green_lvs
 
@@ -91,13 +105,124 @@ blr_palmetto_2 <- glm(formula = p2, data= palmetto_df, family = binomial)
 summary(blr_palmetto_1)
 summary(blr_palmetto_2)
 
-
-```
-
-```{r binarylognocanopy}
-
+#levels(palmetto_df$species)
+# Serenoa repens (species 1) is 'level 1' and Sabal etonia (species 2) is 'level 0'
 
 
 ```
 
-**Data source:** Abrahamson, W.G. 2019. Survival, growth and biomass estimates of two dominant palmetto species of south-central Florida from 1981 - 2017, ongoing at 5-year intervals ver 1. Environmental Data Initiative. <https://doi.org/10.6073/pasta/f2f96ec76fbbd4b9db431c79a770c4d5>
+As far as I can tell from the AIC, blr_palmetto_1, that considers all four variables, is the better model. Therefore, I will use it for the next task.
+
+#### 10 Fold Cross-Validation
+
+```{r trainingtesting2}
+
+set.seed(100000)
+
+palm_fold_10E4 <- vfold_cv(palmetto_df, v = 10, repeats = 10)
+
+```
+
+```{r glm}
+
+
+blr_palm_model <- logistic_reg() %>%
+  set_engine('glm')
+
+
+blr1_fit <- blr_palm_model %>%
+  fit(formula = p1, data = palmetto_df)
+
+blr2_fit <- blr_palm_model %>%
+  fit(formula = p2, data = palmetto_df)
+
+```
+
+```{r workflowandfolding}
+
+blr1_workflo <- workflow() %>%  
+  add_model(blr_palm_model) %>%
+  add_formula(p1)
+
+blr2_workflo <- workflow() %>%  
+  add_model(blr_palm_model) %>%
+  add_formula(p2)
+
+blr1_fit_fold <- blr1_workflo %>%
+  fit_resamples(palm_fold_10E4)
+
+blr2_fit_fold <- blr2_workflo %>%
+  fit_resamples(palm_fold_10E4)
+
+```
+
+#### Comparing Cross-Validation Results
+
+```{r kablefromXmen}
+
+collect_metrics(blr1_fit_fold) %>% 
+  select(-.config) %>% 
+  rename(metric = .metric,
+         estimator = .estimator,
+         standard_error = std_err) %>% 
+  kbl() %>% 
+  kable_styling("basic", position = "center")
+
+collect_metrics(blr2_fit_fold) %>% 
+  select(-.config) %>% 
+  rename(metric = .metric,
+         estimator = .estimator,
+         standard_error = std_err) %>% 
+  kbl() %>% 
+  kable_styling("basic", position = "center")
+
+```
+
+BLR model 1 has a accuracy- 91% against BLR model 2's 89%- indicating at first glance that it is the better model to describe the data. BLR model 1 has a lower standard error as well. So, I will be using model 1 for the rest of this assignment, where I train my model against the rest of the dataset and find out to what percent success it can classify species.
+
+```{r trainingarc}
+
+model_1_fit <- blr_palm_model %>% 
+  fit(formula = p1, data = palmetto_df)
+
+```
+
+```{r trainingarcresolution}
+
+broom::tidy(model_1_fit) %>% 
+  select(-statistic) %>% 
+  kbl() %>% 
+  kable_styling('basic', position = 'center')
+
+```
+
+How well can my model predict palmetto species?
+
+### Prediction Success Rate
+
+```{r}
+
+palm_predict <- palmetto_df %>% 
+  ungroup() %>% 
+  mutate(predict(model_1_fit, new_data = .)) %>% 
+  mutate(predict(model_1_fit, new_data = ., type = 'prob')) 
+
+predict_table <- table(palm_predict %>%
+        select(species, .pred_class))
+
+predict_table
+
+```
+
+```{r}
+
+kbl(data.frame(
+  species = c("se_repens", "sa_etonia"),
+  n_correct = c(5548, 5701),
+  n_incorrect = c(564, 454)) %>% 
+  mutate(p_correct = n_correct/(n_correct+n_incorrect))) %>% 
+  kable_styling("basic", position = "center")
+
+```
+
+Overall, my model was 91% accurate.
