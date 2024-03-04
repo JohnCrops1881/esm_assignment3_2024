@@ -15,12 +15,18 @@ execute:
   warning: false
 ---
 
+# Assignment 3, Task 2
+
 ```{r setup}
 
 
 library(here)
 library(tidyverse)
 library(nlraa)
+library(kableExtra)
+library(patchwork)
+library(purrr)
+library(Metrics)
 
 ```
 
@@ -28,10 +34,268 @@ library(nlraa)
 
 ## Data Overview and Task Summary
 
-Soil. It's essential for agriculture. Crops grow in soil. This relationship- soil nurturing crops- is as predictable as it is simple. However,
+Soil. It's essential for agriculture. Crops grow in soil. This relationship- soil nurturing crops- is as predictable as it is simple. However, the actual mechanics of the relationship is complex, and the impacts of tending to crops (watering, spreading fertilizer) is not best represented by a linear relationship. There are a number of factors that affect crop growth, and the observation of those factors at play is best represented by a nonlinear model; a model that better tracks the irregular behavior of crops as they grow, so sayeth S.V. Archontoulis and F.E. Miguez.
 
-## Pseudocode for Task 2
+In this task, I will run non-linear least square (NLS) analyses to recreate analyses performed in the paper by Archontoulis and Miguez, in order to make predictions regarding agricultural yield. In the interest of clarity, instead of a pseudocode header, I will provide short text explanations of each task as I complete it.
 
-```{r}
+#### Data Citation
 
+Archontoulis, S.V. and Miguez, F.E. (2015), Nonlinear Regression Models and Applications in Agricultural Research. Agronomy Journal, 107: 786-798. https://doi.org/10.2134/agronj2012.0506
+
+## Data Cleaning
+
+```{r readindata}
+
+sm_raw <- sm %>% 
+  janitor::clean_names()
+
+```
+
+The five variables in the data described as follows:
+
+-   doy = day of the year
+
+-   block = what portion of the treatment field the crop was a part of (1-4)
+
+-   input = either high (1) or low (2)
+
+-   crop = Maize (M), Sweet Sorghum (S), or Fiber Sorghum (F)
+
+-   yield = total wet & dry biomass yield (tons / hectre)
+
+The first part of the task is to visually explore the data. So I created two graphs: one to model high input crop yield (input 1 in the sm data), and the other to model low input crop yield (input 2 in the sm data). I created these, and color-coded each to denote the three crop species: Maize (M), Sweet Sorghum (S), and Fiber Sorghum (F).
+
+```{r highvslow}
+
+high_in_df <- sm_raw %>% 
+  filter(input == 1)
+
+low_in_df <- sm_raw %>% 
+  filter(input == 2)
+
+high_in_plot <- ggplot(high_in_df, aes(x = doy, y = yield, color = crop)) +
+  geom_point() +
+  theme_minimal() +
+  xlab('Day of the year') +
+  ylab('Yield') +
+  labs(title = 'High Input')
+
+low_in_plot <- ggplot(low_in_df, aes(x = doy, y = yield, color = crop)) +
+  geom_point() +
+  theme_minimal() +
+  xlab('Day of the year') +
+  ylab('Yield') +
+  labs(title = 'Low Input')
+  
+
+highlow_crop_plot <- low_in_plot + high_in_plot + plot_annotation(
+  title = 'Crop Yield: Maize (M), Sweet Sorghum (S), and Fiber Sorghum (F)',
+  tag_levels = '1',
+  tag_prefix = 'Fig. ',
+  tag_sep = '.',
+  tag_suffix = ':',
+)
+
+highlow_crop_plot
+```
+
+## Beta Function
+
+![Beta formula](formula.png)
+
+The beta function's variables are defined as follows:
+
+-   y : yield (response variable)
+
+-   y(max) : asymptotic (maximum y value)
+
+-   t : time (explanatory variable)
+
+-   t(e) : time when y = y(max)
+
+-   t(m) : inflection point (where growth is maximized)
+
+Taking those variable descriptions into account, this is the beta function recreated in R:
+
+```{r betaformula}
+
+beta <- function(ymax, t_e, t_m, doy){
+  
+  yield = ymax * (1 + (t_e - doy)/(t_e - t_m)) * (doy/t_e)^(t_e/(t_e - t_m))
+  
+  return(yield)}
+
+```
+
+## High Input Sorghum Fields
+
+For the next part of the task, I was asked to filter out everything except for high input sorghum fields, and and run analysis using my beta formula to determine the maximum yield, and also to see the standard error and p-values.
+
+```{r sorghum}
+
+high_sorghum <- high_in_df %>% 
+  filter(crop == c('S', 'F'))
+
+high_sorghum_nls <- nls(yield ~ beta(ymax, t_e, t_m, doy),
+                    data = high_sorghum,
+                    start = list(ymax = 31, t_e = 280, t_m = 230),
+                    trace = TRUE)
+
+broom::tidy(high_sorghum_nls) %>% 
+  janitor::clean_names(case = "title") %>% 
+  kable(digits = 60) %>% 
+  kable_paper('hover', full_width = F)
+
+```
+
+Then, I was tasked to graph the high input Sorghum data on top of the maize data. First, I had to create a new dataframe with just the maize data. Then, I plotted the two together. The maize biomass data is represented by points, and the sorghum predicted yield data is represented by the smoothed trendline.
+
+```{r sorgovermaize}
+
+maize_df <- sm_raw %>% 
+  filter(crop == 'M') %>% 
+  filter(doy < 263)
+
+high_s_predict <- high_sorghum  %>% 
+  mutate(predict = predict(high_sorghum_nls, newdata ='.'))
+
+sorgmaize <- ggplot(data = maize_df, aes(x = doy, y = yield)) +
+  geom_point() +
+  geom_smooth(data = high_s_predict, aes(x = doy, y = yield), color = 'cornflowerblue') +
+  theme_minimal() +
+  xlab('Day of the year') +
+  ylab('Yield')
+
+
+sorgmaize + plot_annotation(
+  title = 'High Input Sorghum Predicted Yield Data',
+  subtitle = 'Graphed over Maize Biomass Data'
+)
+
+```
+
+## Determining Lowest RMSE value
+
+For the next part of this task, I was asked to use purrr and create models for each possible permutation of plot, input level, and crop type.
+
+The intended goal of this action is to determine which permutation has the lowest root mean square error (RMSE).
+
+```{r 24NLS}
+
+# Creating a function to perform NLS analysis
+total_nls_func <- function(yield){
+  
+  nls(yield ~ beta(ymax, t_e, t_m, doy),
+      data = sm_raw,
+      start = list(ymax = 31, t_e = 280, t_m = 230))
+}
+
+#Nesting the data is super important here. Not doing so breaks the code.
+beta_total <- sm_raw %>% 
+  group_by(input, crop, block) %>% 
+  nest() %>% 
+  mutate(nls_model = map(data, ~total_nls_func(.x))) %>% 
+  mutate(predictions = map2(nls_model, data,
+                            ~predict(.x, newdata = .y))) %>% 
+  mutate(RMSE = map2_dbl(predictions, data,
+                         ~Metrics::rmse(.x, .y$yield))) %>% 
+  mutate(smooth = map(nls_model,
+                      ~predict(.x, newdata = list(doy = seq(147, 306)))))
+
+#The doy =  seq was input given explictly in the instructions for this assignment, Not doing so also breaks the code.
+
+
+```
+
+To accomplish this task, I separated each species into their own dataframe, extracted their low RMSE values, and then recombined that data into one dataframe. Then I grouped that data together and displayed it in a Kable table.
+
+```{r speciesdata}
+
+beta_fiber <- beta_total %>% 
+  filter(crop == 'F') %>% 
+  group_by(crop) %>%
+  slice_min(n=1, order_by = RMSE) 
+
+beta_sweet <- beta_total %>% 
+  filter(crop == 'S') %>% 
+  group_by(crop) %>%
+  slice_min(n=1, order_by = RMSE) 
+
+beta_maize <- beta_total %>% 
+  filter(crop == 'M') %>% 
+  group_by(crop) %>%
+  slice_min(n=1, order_by = RMSE)
+
+# Combine 3 rows extracted above into new data frame
+min_rmse <- full_join(beta_fiber, beta_sweet)
+min_rmse <- full_join(min_rmse, beta_maize) 
+min_rmse <- min_rmse %>% 
+  select(block, input, crop, RMSE)
+
+# Tabulate minimum RMSE by species
+min_rmse_tbl <- min_rmse %>% 
+  janitor::clean_names(case = "title") %>% 
+  kable(format = 'html', row.names = FALSE, digits = 15)  %>% 
+  kable_paper('hover', full_width = F)
+
+min_rmse_tbl
+
+```
+
+The species with the lowest RMSE value is Fiber Sorghum (F).
+
+## Recreating Figure 7
+
+The final task for this assignment is to recreate figure 7 from the paper. Figure 7, shown below, shows 'observed data and fit for the final model for three crops: Maize (M), fiber sorghum (F), and sweet sorghum (S). Vertical bars indicate confidence intervals of observations.'
+
+I was given some additional instructions to complete this task, that I have incorporated into the code below. One, to separate dataframes into two: filtered data, and a vector of days from 141 to 306. Two, filter observations of predicted yield when the day of the year is less than 263. Both of those instructions are incorporated.
+
+![](figure7.png)
+
+```{r fig7prep}
+
+unnest_df <- beta_total %>% 
+  filter(block == 1) %>% 
+  tidyr::unnest(smooth) %>% 
+  mutate(doy = seq(147, 306)) %>% 
+  filter(!(doy > 263 & crop == 'M'))
+
+
+sm_filter <- sm_raw %>% 
+  filter(block == 1) %>% 
+  select(doy, yield)
+
+unnest_sm_join <- left_join(unnest_df, sm_filter, by = join_by(doy))
+
+predict_df <- beta_total %>% 
+ tidyr::unnest(smooth) %>% 
+  mutate(doy = seq(147, 306)) %>% 
+  filter(!(doy > 263 & crop == 'M')) %>% 
+  unnest(predictions)
+
+predict_maize <- predict_df %>% 
+  filter(crop == 'M')
+
+predict_sweet <- predict_df %>% 
+  filter(crop == 'S')
+
+predict_fiber <- predict_df %>% 
+  filter(crop == 'F')
+
+```
+
+```{r fig7plot}
+
+fig7 <- ggplot(unnest_sm_join, 
+                    aes(x = doy, y = yield, shape = crop, fill = crop)) +
+  geom_point() +
+  geom_line(data = predict_m, aes(x = doy, y = smooth)) +
+  geom_smooth(data = predict_f, aes(x = doy, y = smooth)) +
+    geom_smooth(data = predict_s, aes(x = doy, y = smooth)) +
+  labs(x = "Day of the Year", y = "Biomass (Mg/ha") +
+  theme_minimal()
+
+fig7 + plot_annotation(
+  title = 'Figure 7, Recreated'
+)
 ```
